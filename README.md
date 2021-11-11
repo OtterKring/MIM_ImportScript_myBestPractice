@@ -16,20 +16,26 @@ There are plenty of Management Agents available for MIM written for specific sys
 
 # Parts of a PSMA import script
 
-A PSMA import script consists of **5 main parts**:
+A PSMA import script consists of **6 main parts**:
 
+* the password.ps1
+* the Schema
 * control data handed to the script by parameters
 * global variables
 * the data retrieval from the "external" system
 * the mail loop building the output data structure for MIM
 
-Søren Granfeldt gives a clear but in my opinion very rough [overview](https://github.com/sorengranfeldt/psma/wiki/Import) over these parts. Together with Darren Robinson's [instructions](https://blog.darrenjrobinson.com/using-the-new-granfeldt-fim-mim-powershell-management-features/) you can make sense of it, but in my opinion it is still quite a challenge.
+Søren Granfeldt gives a clear but maybe a bit rough [overview](https://github.com/sorengranfeldt/psma/wiki/Import) over these parts. Together with Darren Robinson's [instructions](https://blog.darrenjrobinson.com/using-the-new-granfeldt-fim-mim-powershell-management-features/) you can make sense of it, but in my opinion it is still quite a challenge and I want to show you my own approach here, too.
 
-So let me try to break it up ...
+So let me try to break it up and put it together nicely again ...
+
+## 0) Password.ps1
+
+Just to get it over with: even if you do not handle passwords with PSMA, [you **MUST** define a password.ps1](https://github.com/sorengranfeldt/psma/wiki/PasswordManagement) script file for PSMA to work! The name of the file is totally up to you and it can be completely empty if you don't use the feature, but it must exist.
 
 ## 1) The Schema
 
-The Schema is a .ps1 file of its own holding a PSCustomObject which describes the data set you will return to MIM. Every fields you want to import in MIM must be defined there.
+The Schema is a .ps1 file of its own holding a `PSCustomObject` which describes the data set you will return to MIM. Every field you want to import in MIM must be defined there.
 
 The definition is pretty straight forward so I leave you to [Søren Granfeldt's original explanation.](https://github.com/sorengranfeldt/psma/wiki/Schema).
 
@@ -46,14 +52,15 @@ Why he is using the slow `Add-Member` to build the object and then explicitly re
 }
 ```
 
-However, I haven't tested this, yet, and since it has no relevant influence on usability or performance of your PSMA Management Agent, it will imho remain a matter of taste.
+However, I haven't tested this, yet, and since it has no relevant influence on usability or performance of your PSMA Management Agent, it will remain a matter of taste in my opinion.
 
 **NOTE:**
 
-The "Anchor-" prefix for the field being used as Anchor in MIM as well as the different "|type" postfixes are only used in the Schema script! In the import script it would still remain 'Id', 'objectClass','AccountName', ...!
+* The `Anchor` prefix for the field being used as anchor in MIM as well as the different `|type` postfixes are only used in the Schema script! In the import script you keep using 'Id', 'objectClass','AccountName', ...!
+* The `objectClass` field must be returned for every dataset, so PSMA/MIM can identify where the dataset belongs to. This includes error message you return to MIM from your import or export scripts! More on these later ...
 
 ## 2) Parameters
-*I am only covering the basic parameters here (the ones I used and therefor had to understand 😉). Please consult Mr Granfledt's instructions for additional ones*
+*I am only covering the basic parameters here (the ones I used and therefor had to understand 😉). Please consult Mr Granfeldt's instructions for additional ones*
 
 Parameter|Description
 ---|---
@@ -74,15 +81,15 @@ Finally, though I have not used or wrapped my head around it, yet, I want to men
 
 ## 3) Global Variables / Control data
 
-PSMA offers a couple of global variables to control your data flow. The first one, `$global:RunStepCustomData` is the only one generally neede for each type of import, if delta import should be supported, the others are only necessary for *paged import*:
+PSMA offers a couple of global variables to control your data flow. The first one, `$global:RunStepCustomData`, is the only one generally needed for each type of import, if delta import should be supported, the others are only necessary for *paged import*:
 
 Variable|Description
 ---|---
-`$global:RunStepCustomData`|can hold any data suiting you to save a time stamp for a delta import. The data is saved within MIM/PSMA and can be retrieved on the next run to import only the datasets changed since the latest import.
-`$global:tenantObjects`|holds all the objects you want to import. You usually pull all your data from the source system into this variable and then import it page by page.
-`$global:objectsImported`|an integer counter which keeps track of the number of tenantObjects you have processed already.
-`$global:PageToken`|an integer counter to keep track how many tenantObjects you have processed since the current page started. The `$PageSize` parameter must be checked in the import loop for the limit.
-`$global:MoreToImport`|a boolean flag which tells PSMA to recall the script for another import page if `$true` or to tell MIM that we are done importing (`$false`).
+`$global:RunStepCustomData`|can hold any data suiting you to save a time stamp for a delta import. The data is saved within MIM/PSMA and can be retrieved on the next run to import only the datasets changed since the latest import.<br>Required for delta imports.<br><br>In some examples online you will find a watermark file written to disk instead of using this variable. I recommend using the variable.
+`$global:tenantObjects`|holds all the objects you want to import. You usually pull all your data from the source system into this variable and then import it page by page.<br>Required for paged import
+`$global:objectsImported`|an integer counter which keeps track of the number of tenantObjects you have processed already.<br>Required for paged import
+`$global:PageToken`|an integer counter to keep track of how many tenantObjects you have processed since the current page started. The `$PageSize` parameter must be checked in the import loop for the limit.<br>Required for paged import
+`$global:MoreToImport`|a boolean flag which tells PSMA to recall the script for another import page if `$true` or to tell MIM that we are done importing (`$false`).<br>Required for paged import
 
 
 ## 4) Data retrieval
@@ -95,8 +102,9 @@ This is were the music plays. Whatever you want to do with your data, it must ha
 
 Now, in an ideal world or in the world of a real MIM-Expert, all the import script has to do is take the original data one by one and map it to the fields defined in your Schema.ps1. Even if you need your data to be transformed in any way, it could probably be done using MIM's internal functions, workflows, etc.
 
-However, both is very unlikely if you have not spent a lot of hours learning MIM internals.
+However, both is very unlikely if you have not spent a lot of hours learning MIM internals. I didn't, I learned Powershell. :-)
 
+### The classic, code centric approach
 
 In most references about importing scripts I found a copy Mr Grandfeldt's technique to build the output hashtable for MIM:
 
@@ -119,11 +127,11 @@ foreach ($dataset in $InputData) {
 }
 ```
 
-From a first glance there is nothing bad. Straight forward, going with the flow, adding the fields as it suits you, then returning the data to MIM.
+From a first glance there is nothing bad with this approach. Straight forward, going with the flow, adding the fields as it suits you, then returning the data to MIM.
 
 As I said before, in an ideal world, this actually is all you have to do.
 
-But then you find, your company has different formats for costcenters in different countries, and since you are not familiar with MIM's internal possibilities or know, you have others in your team knowing Powershell but nobody knowing MIM, you add to the code:
+But then you find, your company has different formats for costcenters in different countries which must be harmonized, and since you are not familiar with MIM's internal possibilities or know, you have others in your team knowing Powershell but nobody knowing MIM, you add to the code (don't try to make sense of the resulting data, this is just example code ;-) ) :
 
 ```
     $CC = $switch ($dataset.Country) {
@@ -149,7 +157,9 @@ Oh, and the office in UK needs the building number in front of the street, well,
 ... and so on. Soon you will have code all over the place where you had your fields listed and have a really hard time finding anything anymore.
 
 
-**Therefor I strongly propose a different approach:**
+**Therefor I strongly propose a different, data centric approach:**
+
+### The data centric approach
 
 In opposition to other automation scripts you may have written, an import script for MIM is not about the code or algorithm but solely about the data!
 
@@ -161,7 +171,7 @@ Instead of writing your code in a sequence of processes concentrate on the data 
 
 ... and nothing else matters!
 
-Instead of adding each field individually to your output hashtable, create one hashtable at once and _use a function to fill each field_, even if the function just returns a variable unaltered. Just for consistency.
+Instead of adding each field individually to your output hashtable, **create one hashtable at once** and **use one function for each field**, even if the function just returns a variable unaltered. Just for consistency and ease of maintenance.
 
 Putting together the examples from above this would look like this:
 
@@ -193,7 +203,7 @@ function Get-OutputStreetAddress {
     if ($dataset.Country -ne 'UK') {
         $StreetAddress = $dataset.Street + ' ' + $dataset.BuildingNr
     } else {
-        $StreetAddress = $dataset.BuildingNr + ' ' $dataset.Street
+        $StreetAddress = $dataset.BuildingNr + ' ' + $dataset.Street
     }
 }
 
@@ -300,5 +310,8 @@ foreach ($dataset in $InputData) {
 
 ## Paged Importing
 
+_to be added_
 
+## Error Handling
 
+_to be added_
