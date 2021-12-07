@@ -169,7 +169,7 @@ Instead of writing your code in a sequence of processes concentrate on the data 
 1) the data coming into your script
 2) the data going out of your script
 
-... and nothing else matters!
+... and nothing else matters! Not even the sequence in which the data is processed!
 
 Instead of adding each field individually to your output hashtable, **create one hashtable at once** and **use one function for each field**, even if the function just returns a variable unaltered. Just for consistency and ease of maintenance.
 
@@ -248,15 +248,15 @@ param(
 #-Functions-----------------------------------------
 
 function Get-OutputId {
-
+    $dataset.Id
 }
 
 function Get-OutputAccountName {
-
+    $dataset.LastName
 }
 
-function Get-OutputWhenBorn {
-
+function Get-OutputDoB {
+    $dataset.WhenBorn
 }
 
 ...
@@ -271,6 +271,7 @@ function Get-OutputWhenBorn {
 #-Importing-Data------------------------------------
 
 # save current time right before importing from the source
+# you may want to add a .AddMinutes(-1) to the $Now, just in case your two servers' times are a couple of seconds off each other
 
 $Now = [datetime]::Now
 
@@ -296,9 +297,9 @@ if (($InputData -as [array]).count -gt 0) {
 foreach ($dataset in $InputData) {
 
     $Output = @{
-        Id          = $dataset.Id
-        AccountName = $dataset.LastName
-        DoB         = $dataset.WhenBorn
+        Id          = Get-OutputId
+        AccountName = Get-OutputAccountName
+        DoB         = Get-OutputDoB
         ...
     }
 
@@ -310,7 +311,222 @@ foreach ($dataset in $InputData) {
 
 ## Paged Importing
 
-_to be added_
+Now, how to implement paged importing?
+
+Once you have a large amount of datasets to process, paged import adds a certain granularity to the import (and export, but that's a different and far less complicated story).
+
+Let's say you have 10.000 datasets to process. If you do it all in one step you will have to wait until the full batch is processed until you see any result in MIM. Depending on your bandwidth, the amount of data included and the processing done in your script this can take a long time. And you might want to see what is going on during the process, apart from the logging you hopefully have implemented in the script.
+
+### Important code additions
+
+As already discussed in _Parameters_ and _Control Data_ we must use additional control structures in our code to make it ready for paging. Let's review them again:
+
+Control Structure|Purpose
+---|---
+`[bool]$UsePagedImport`|Tell the script to use paged import
+`[int]$PageSize`|The size of each page, means: how many datasets should be processed before giving the control back to MIM/PSMA
+`[array]$global:tenantObjects`|The collection of all datasets to be imported
+`[int]$global:objectsImported`|Counts, how many datasets have been imported
+`[int]$global:PageToken`|Counts, how many datasets have been processed in a single page (must be reset with every page)
+`[bool]$global:MoreToImport`|Tells PSMA to call the script again for the next page if there is more data to import or if it may stop importing
+
+### The loop logic
+
+From the description of `$global:MoreToImport` you might already have derived how PSMA is treating paged imports: it calls the import script again for every page! This is also the reason why many of our _Control Data_ variables are of scope `global`, because they **must** survive the script exiting and being called again.
+
+This means we have to make sure that:
+
+* our data is only imported once, like:
+```
+# make sure we only load import data if it hasn't been done before
+if (!$global:tenantObjects) {
+    $global:tenantObjects = # whatever you do to get your data
+}
+```
+* we reset the `$global:PageToken` every time we reach the processing loop
+* the loop knows where to continue importing when in any page following page 1, when a page is completed and when all `$global:tenantObjects` have been imported. Additionally, it must respect if paged import was asked for, or not, and behave respectively.
+* `$global:objectsImported` and `$global:PageToken` get incremented at the end of each iteration and ...
+* `$global:MoreToImport` must be set at the end of each page
+
+Quite a lot asked.
+
+The usual way to iterate through a given collection of datasets in Powershell would be the foreach{}-Loop, as I used it in the above template for basic importing. However, now we get a lot of conditions the loop must respect. It's not just "run through the whole collection and be gone".<br>
+Of course, you could use conditionals within the loop and the `break` statement to quit the operation whenever necessary. But this is a pretty bad approach when it comes to readability and maintainability of the code.
+
+_"Great, there is a loop!"<br>
+"Wait, there is a break ... and there are more conditions asked ... when the heck does this thing run through at all???"_
+
+Wouldn't it be nice if there was a loop which could do all this for us?
+
+### Enter the `for{}`-Loop
+
+The good old for{}-Loop which generations of developers have learned from their first programming lessons provides all the functionality we need:
+* setting a "counter"
+* respecting any boolean returning condition to break the loop
+* incrementing the counter
+
+... and everything the loop's head. Nothing to search for, all the information you need in one place, right at the beginning, like:
+```
+for ($i = 0; $i -lt $array.count; $i++) {
+    # whatever
+}
+```
+
+**Is this cool or what?**
+
+Of course, our's will not be that simple.
+
+First, we cannot just set our counter variable to 0. Whenever our script is run again during paged import the loop must start at the point where it stopped last time. The variable holding this information is `$global:importedObjects`, which is 0 at the beginning of the first call, but is incremented after each loop iteration. So it makes sense to set our counter variable to the value of `$global:importedObjects` whenever the loop starts:
+
+```
+for ($i = $global:importedObjects; <# condition #>; $i++) { ... }
+```
+
+You probably could skip `$i` all along and just use `$global:importedObjects` as the counter. You would have to set it to itself then for initialization. I prefer this way.
+
+Now to the termination condition.
+
+First of all we want the loop to run until all our objects`$global:tenantObjects` have been imported. This is easy:
+```
+for ($i = $global:importedObjects; $i -lt $global:tenantObjects.Count ... ; $i++) { ... }
+```
+It should to just this, if `$UsePagedImport` is `$false`. So ...
+```
+for ($i = $global:importedObjects; $i -lt $global:tenantObjects.Count -and !$RunPagedImport ... ; $i++) { ... }
+```
+**But** if `$RunPagedImport` is `$true`, it should not only break when everything is done, but also when a page is completed. So _"run to end if no paged import is requested *or* paged import IS requested and the current page is completed"_.
+
+This translates to our final conditional statement in the loop:
+
+
+```
+for ($i = $global:objectsImported; $i -lt $global:tenantObjects.Count -and (!$UsePagedImport -or ($UsePagedImport -and $global:PageToken -lt $PageSize)); $i++) {
+
+    <# processing logic for $global:tenantObject[$i] #>
+
+    # at the end of the loop, increment the tracking counters
+    $global:importedObject++
+    $global:PageSize++
+
+}
+```
+
+Since we are not using a `foreach{}`-Loop you must use classic array syntax to access the current object to be process, like `$global:tenantObject[$i]`, as I outlined in the block comment in the above snippet.
+
+At the very end of the loop, do not forget incrementing our tracking counters, so the script knows, where it is in the process.
+
+### Finishing the paged import
+
+All that is left to do now to complete the paged import code is to set the `$global:MoreToImport` variable and tell MIM/PSMA, if we are done or not. A simple `if` statement:
+```
+    # Is the number of imported objects still lower then all objects together?
+    # Then we have MoreToImport.
+    if ($global:objectsImported -lt $global:tenantObjects.Count) {
+        $global:MoreToImport = $True
+    } else {
+        $global:MoreToImport = $False
+    }
+```
+
+## Paged Importing Template
+
+That's it!
+
+Congratulations! If you have made it up to here, you definitely deserved a templated for paged importing, based on the basic importing templated from above:
+
+
+```
+param(
+    [PSCredential]$Credentials,
+    [string]$OperationType,
+    [bool]$UsePagedImport,
+    [int32]$PageSize
+)
+
+#-Functions-----------------------------------------
+
+function Get-OutputId {
+    $dataset.Id
+}
+
+function Get-OutputAccountName {
+    $dataset.LastName
+}
+
+function Get-OutputDoB {
+    $dataset.WhenBorn
+}
+
+...
+
+#-General-Preparations------------------------------
+
+    # import modules
+    # define variables
+    # whatever ..
+
+
+#-Importing-Data------------------------------------
+
+$Now = [datetime]::Now
+
+# only fetch the data to import at the first run, when $global:tenantObjects is still empty
+if (!$global:tenantObjects) {
+
+    if ($OperationType -eq "DELTA" -and $global:RunStepCustomData) {
+        $global:tenantObjects = Get-MySourceData -ChangedAfter $global:RunStepCustomData
+    } else {
+        $global:tenantObjects = Get-MySourceData
+    }
+
+    if (($global:tenantObjects -as [array]).count -gt 0) {
+        $global:RunStepCustomData = $Now
+    }
+
+    # set the import tracking counter to 0
+    # also only happens at first run of the script
+    # the counter will keep incrementing over all pages
+    $global:objectsImported = 0
+
+}
+
+
+#-Processing-Loop-----------------------------------
+
+for ($i = $global:objectsImported; $i -lt $global:tenantObjects.Count -and (!$UsePagedImport -or ($UsePagedImport -and $global:PageToken -lt $PageSize)); $i++) {
+
+    # use a speaking variable name instead of the array element through the rest of the code
+    $dataset = $global:tenantObjects[$i]
+
+    $Output = @{
+        Id          = Get-OutputId
+        AccountName = Get-OutputAccountName
+        DoB         = Get-OutputDoB
+        ...
+    }
+
+    $Output
+
+    # at the end of the loop, increment the tracking counters
+    $global:importedObject++
+    $global:PageSize++
+
+}
+
+
+#-Status-Communication-for-PSMA--------------------
+
+# Is the number of imported objects still lower then all objects together?
+# Then we have MoreToImport.
+if ($global:objectsImported -lt $global:tenantObjects.Count) {
+    $global:MoreToImport = $True
+} else {
+    $global:MoreToImport = $False
+}
+
+# END OF SCRIPT
+```
+
 
 ## Error Handling
 
