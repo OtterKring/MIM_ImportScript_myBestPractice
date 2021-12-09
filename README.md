@@ -1,5 +1,5 @@
 # Best practice recommendation for writing an Import Script for Microsoft Identity Manager with PSMA
-
+last update: Dec 2021
 
 ## PSM... what?
 

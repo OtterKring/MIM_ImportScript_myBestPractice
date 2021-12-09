@@ -1,13 +1,13 @@
 # My MIM/PSMA story
-
+last update: Dec. 2021
 ## Who am I and why am I doing this?
 
-My name is Maximilian Otter, I am working as a System-Expert for Microsoft Exchange and Powershell Automation
+My name is Maximilian Otter, I am working as a System-Expert for Microsoft Exchange and Powershell Automation.
 
 After my finals I studied Organization and Data Processing with focus on Mainframe software development. I found back then that this was not the way of living I wanted to choose for myself and, after a short detour through musical theater, I started my IT career in 2000 as a classic System Administrator. I pursued this path for about 18 years at different companies, providing national and international user support, building networks and domain infrastructures, became self employed for a year until I got hired at my current company in 2011 at a production site.
 In 2013 I was transferred to HQ and got trained on Microsoft Exchange which led me to Powershell ... and I immediately caught fire!
 
-I switched from GUI to Powershell for almost everything I am doing, convinced that I could only really learn it, if I make it my day to day work tool. Since then Exchange and Sharepoint have moved to the cloud, Azure Automation became a thing, and (late, though) Microsoft Identity Manager found its way to us, fortunately for me and my skillset in conjunction with PSMA.
+I switched from GUI to Powershell for almost everything I am doing, convinced that I could only really learn it, if I made it my day to day work tool. Since then Exchange and Sharepoint have moved to the cloud, Azure Automation became a thing, and (late, though) Microsoft Identity Manager found its way to us, fortunately for me and my skillset in conjunction with PSMA.
 
 ## My history with MIM and PSMA
 
@@ -95,6 +95,14 @@ Often math operations like modulo (`x % y`) can avoid conditionals, too.
 
 This is not a performance thing anymore in high level or scripting languages. But it shortens your code.
 
-## (there was another rule I cannot remember right now)
+## Comment the hell out of your code!
 
+I confess, I don't always do it, especially in small functions. But nevertheless commenting might save you writing a manual or at least save you work doing it, because you already wrote a good deal of it within your code.
 
+And after all ... you might not always be there to maintain your code. Help the poor soul coming after you!
+
+## Structure and format
+
+If it is appealing for the eyes, it is easy to maintain.
+
+Well, maybe not always, but it helps. Nobody wants to deal with ugliness.
