@@ -1,9 +1,5 @@
 # Best practice recommendation for writing an Import Script for Microsoft Identity Manager with PSMA
 
-*work in progress*
-
-
-
 
 ## PSM... what?
 
@@ -67,7 +63,7 @@ Parameter|Description
 `$Username` and `$Password`|as they were entered for the Management Agent in MIM. These should be the credentials used to access your external system. **NOTE: the password is sent in clear text!** So I advise against using this parameter pair, if your system can handle SecureString passwords. (VSCode will complain about the use of a plain text $Password parameter, too.)
 `$Credentials`|same as above, but already as `[PSCredential]` object, so the password is a SecureString already and you don't have to convert it anymore. 
 `$OperationType`|tells your script, if it should do a *FULL* import or a *DELTA* import. It does not do this by itself of course. You have to check for `$OperationType -eq 'FULL'` (not case sensitive) or `$OperationType -eq 'DELTA'`. In fact you only have to check for one of the two, because if it is not the one, it must be the other and can be taken care of in the `else` clause of your conditional.
-  
+
 This is enough for basic importing to do everything in one run. If you have a lot of data to import, it is recommended to use *paged importing*, which breaks the amount of data in pre-defined chunks, so you don't have to wait for the whole import to finish when e.g. interrupting an import.
 It might also be a matter of memory. You don't want to run out of memory because your script is hogging all the data before sending it to MIM.
 
@@ -237,7 +233,7 @@ You see? All nicely divided, code and data, each easy to find and to maintain. N
 
 With all that in mind, let's create our ...
 
-## Basic Importing Template
+# Basic Importing Template
 
 ```
 param(
@@ -309,7 +305,7 @@ foreach ($dataset in $InputData) {
 ```
 
 
-## Paged Importing
+# Paged Importing
 
 Now, how to implement paged importing?
 
@@ -428,7 +424,7 @@ All that is left to do now to complete the paged import code is to set the `$glo
     }
 ```
 
-## Paged Importing Template
+# Paged Importing Template
 
 That's it!
 
@@ -527,7 +523,91 @@ if ($global:objectsImported -lt $global:tenantObjects.Count) {
 # END OF SCRIPT
 ```
 
+---
+# Appendix A: Reporting Errors to MIM
 
-## Error Handling
+When something goes wrong during import (or export) you probably want to post a note back to MIM so it is shown in the Synchronization GUI, like MIM does it during import, sync or export with built-in connectors.
 
-_to be added_
+For this you need to hand back the following information packaged in a hashtable, just like your import data:
+
+Data|Description
+---|---
+objectClass|as defined in your schema
+your anchor|the field you defined as the anchor field for MIM in the schema
+anchor value|the value of the anchor of the failed dataset. This value is shown in the left column of MIM's reporting section. If your script experienced an error unrelated to your data, you can set this field to anything you like (e.g. "ERROR" or "Oops!" or ...)
+"Name" of the error|"Name" is a bit misleading. Use it as a short description show in the right column of MIM's reporting section, next to the anchor value you defined.
+Error details|any extended information about the error. This information is shown in the dialog which opens in MIM when you click on the posted error.
+
+**Example:**
+
+We have the following dataset:
+
+Field|Value
+---|---
+objectClass|user
+UserName (Anchor)|newton
+FirstName|Isaac
+LastName|Newt**ö**n
+
+Let's assume the variable holding the data is called `$user`. Your script checks the names, if they use other characters as used by the english alphabet, to be compatible with other services the name is synced to. The "ö" in the LastName obviously doesn't. So you could report back to MIM:
+
+```
+@{
+    objectClass = 'user'
+    UserName = $user.UserName
+    [ErrorName] = 'Invalid character'
+    [ErrorDetail] = '"LastName" contains a character not matching the english alphabet'
+}
+```
+
+Don't be confused by the brackets, they are used for MIM-internal, unchangeable fields. You will find more like this when writing export scripts.
+
+As simple as it is, it is an ugly concept being used like this throughout your script. You will probably have more than just one place in your script where you want to post an error, so I recommend wrapping this part in a function and make it flexible enough to be used with all kinds of anchors and objectClasses. This way you can reuse it for different scripts and data.
+
+This is my approach:
+
+```
+function New-MIMError {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [string]
+        $objectClass,
+        [Parameter(Mandatory)]
+        [string]
+        $AnchorName,
+        [Parameter(Mandatory)]
+        [string]
+        $AnchorValue,
+        [Parameter(Mandatory)]
+        [string]
+        $ErrorName,
+        [Parameter(Mandatory)]
+        [string]
+        $ErrorDetail
+    )
+
+    @{
+        objectClass = $objectClass
+        $AnchorName = $AnchorValue
+        '[ErrorName]' = $ErrorName
+        '[ErrorDetail]' = $ErrorDetail
+    }
+}
+```
+
+The actual call from our example above would then be:
+
+```
+New-MIMError -objectClass 'user' -AnchorName 'UserName' -AnchorValue $user.UserName -ErrorName 'Invalid character' -ErrorDetail '"LastName" contains a character not matching the english alphabet'
+```
+Not exactly less to type, but still better to understand than a sudden hash definition somewhere in the code.
+
+---
+# Appendix B: Logging
+
+This will be a short one:
+
+**Please implement a decent logging in your script!** You will need it more often than you think to find any kinds of strange behavior!
+
+If you need a working logging function, feel free to make use of [mine](https://github.com/OtterKring/PS_Write-Log).
