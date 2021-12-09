@@ -5,7 +5,7 @@
 
 [PSMA is a Management Agent for Microsoft Identity Manager](https://github.com/sorengranfeldt/psma) (MIM, former FIM: "Forefront Identity Manager") created by [Søren Granfeldt](https://github.com/sorengranfeldt) which allows using Powershell scripts to build the bridge between MIM and the systems you want to exchange data with.
 
-There are plenty of Management Agents available for MIM written for specific systems like SAP, Exchange, ActiveDirectory (included in MIM) and many more. PSMA's advantage, and by MIM die-hards often loathed feature, is that you can completely control how the data is transferred between MIM and your system of interest, while not being restricted to a specific API and not having to learn C# or another high level programming language. The only thing necessary is any kind of interface Powershell can use to communicate with your system: an API, a REST web hook, a specific Powershell module, etc.
+There are plenty of Management Agents available for MIM written for specific systems like SAP, Exchange, ActiveDirectory (included in MIM) and many more. PSMA's advantage, and by MIM die-hards an often loathed feature, is, that you can completely control how the data is transferred between MIM and your system of interest, while not being restricted to a specific API and not having to learn C# or another high level programming language. The only thing necessary is any kind of interface Powershell can use to communicate with your system: an API, a REST web hook, a specific Powershell module, etc.
 
 **If you are interested in my personal approach to the topic, you can read my story [here](./MIM_Personal.md).**
 
@@ -52,7 +52,7 @@ However, I haven't tested this, yet, and since it has no relevant influence on u
 
 **NOTE:**
 
-* The `Anchor` prefix for the field being used as anchor in MIM as well as the different `|type` postfixes are only used in the Schema script! In the import script you keep using 'Id', 'objectClass','AccountName', ...!
+* The `Anchor` prefix for the field being used as anchor in MIM as well as the different `|type` postfixes are only used in the Schema script! In the import script you keep using 'Id', 'objectClass', 'AccountName', ...!
 * The `objectClass` field must be returned for every dataset, so PSMA/MIM can identify where the dataset belongs to. This includes error message you return to MIM from your import or export scripts! More on these later ...
 
 ## 2) Parameters
@@ -62,10 +62,9 @@ Parameter|Description
 ---|---
 `$Username` and `$Password`|as they were entered for the Management Agent in MIM. These should be the credentials used to access your external system. **NOTE: the password is sent in clear text!** So I advise against using this parameter pair, if your system can handle SecureString passwords. (VSCode will complain about the use of a plain text $Password parameter, too.)
 `$Credentials`|same as above, but already as `[PSCredential]` object, so the password is a SecureString already and you don't have to convert it anymore. 
-`$OperationType`|tells your script, if it should do a *FULL* import or a *DELTA* import. It does not do this by itself of course. You have to check for `$OperationType -eq 'FULL'` (not case sensitive) or `$OperationType -eq 'DELTA'`. In fact you only have to check for one of the two, because if it is not the one, it must be the other and can be taken care of in the `else` clause of your conditional.
+`$OperationType`|tells your script, if it should do a *FULL* import or a *DELTA* import. It does not do this by itself of course. You have to check for `$OperationType -eq 'FULL'` (not case sensitive) or `$OperationType -eq 'DELTA'`. In fact, you only have to check for one of the two, because if it is not the one, it must be the other and can be taken care of in the `else` clause of your conditional.
 
 This is enough for basic importing to do everything in one run. If you have a lot of data to import, it is recommended to use *paged importing*, which breaks the amount of data in pre-defined chunks, so you don't have to wait for the whole import to finish when e.g. interrupting an import.
-It might also be a matter of memory. You don't want to run out of memory because your script is hogging all the data before sending it to MIM.
 
 Parameter|Description
 ---|---
@@ -77,12 +76,12 @@ Finally, though I have not used or wrapped my head around it, yet, I want to men
 
 ## 3) Global Variables / Control data
 
-PSMA offers a couple of global variables to control your data flow. The first one, `$global:RunStepCustomData`, is the only one generally needed for each type of import, if delta import should be supported, the others are only necessary for *paged import*:
+PSMA offers a couple of global variables to control your data flow. The first one, `$global:RunStepCustomData`, is the only one generally needed for every type of import, if delta import should be supported, the others are only necessary for *paged import*:
 
 Variable|Description
 ---|---
 `$global:RunStepCustomData`|can hold any data suiting you to save a time stamp for a delta import. The data is saved within MIM/PSMA and can be retrieved on the next run to import only the datasets changed since the latest import.<br>Required for delta imports.<br><br>In some examples online you will find a watermark file written to disk instead of using this variable. I recommend using the variable.
-`$global:tenantObjects`|holds all the objects you want to import. You usually pull all your data from the source system into this variable and then import it page by page.<br>Required for paged import
+`$global:tenantObjects`|holds all the objects you want to import. You usually pull all your data from the source system into this variable and then import it page by page.<br>Required for paged import.<br><br>If you don't use paged import, you may use any variable you want to hold your data.
 `$global:objectsImported`|an integer counter which keeps track of the number of tenantObjects you have processed already.<br>Required for paged import
 `$global:PageToken`|an integer counter to keep track of how many tenantObjects you have processed since the current page started. The `$PageSize` parameter must be checked in the import loop for the limit.<br>Required for paged import
 `$global:MoreToImport`|a boolean flag which tells PSMA to recall the script for another import page if `$true` or to tell MIM that we are done importing (`$false`).<br>Required for paged import
@@ -102,7 +101,7 @@ However, both is very unlikely if you have not spent a lot of hours learning MIM
 
 ### The classic, code centric approach
 
-In most references about importing scripts I found a copy Mr Grandfeldt's technique to build the output hashtable for MIM:
+In most references about importing scripts I found a copy of Mr Grandfeldt's technique to build the output hashtable for MIM:
 
 ```
 # define a hashtable
@@ -153,7 +152,7 @@ Oh, and the office in UK needs the building number in front of the street, well,
 ... and so on. Soon you will have code all over the place where you had your fields listed and have a really hard time finding anything anymore.
 
 
-**Therefor I strongly propose a different, data centric approach:**
+**Therefor I strongly recommend a different, data centric approach:**
 
 ### The data centric approach
 
@@ -319,8 +318,8 @@ As already discussed in _Parameters_ and _Control Data_ we must use additional c
 
 Control Structure|Purpose
 ---|---
-`[bool]$UsePagedImport`|Tell the script to use paged import
-`[int]$PageSize`|The size of each page, means: how many datasets should be processed before giving the control back to MIM/PSMA
+`[bool]$UsePagedImport`|Tell the script to use paged import (Parameter)
+`[int]$PageSize`|The size of each page, means: how many datasets should be processed before giving the control back to MIM/PSMA (Parameter)
 `[array]$global:tenantObjects`|The collection of all datasets to be imported
 `[int]$global:objectsImported`|Counts, how many datasets have been imported
 `[int]$global:PageToken`|Counts, how many datasets have been processed in a single page (must be reset with every page)
@@ -346,11 +345,11 @@ if (!$global:tenantObjects) {
 
 Quite a lot asked.
 
-The usual way to iterate through a given collection of datasets in Powershell would be the foreach{}-Loop, as I used it in the above template for basic importing. However, now we get a lot of conditions the loop must respect. It's not just "run through the whole collection and be gone".<br>
+The usual way to iterate through a given collection of datasets in Powershell would be the `foreach{}`-Loop, as I used it in the above template for basic importing. However, now we get a lot of conditions the loop must respect. It's not just "run through the whole collection and be gone".<br>
 Of course, you could use conditionals within the loop and the `break` statement to quit the operation whenever necessary. But this is a pretty bad approach when it comes to readability and maintainability of the code.
 
-_"Great, there is a loop!"<br>
-"Wait, there is a break ... and there are more conditions asked ... when the heck does this thing run through at all???"_
+>_"Great, there is a loop!"<br>
+>"Wait, there is a break ... and there are more conditions asked ... when the heck does this thing run through at all???"_
 
 Wouldn't it be nice if there was a loop which could do all this for us?
 
@@ -361,7 +360,7 @@ The good old for{}-Loop which generations of developers have learned from their 
 * respecting any boolean returning condition to break the loop
 * incrementing the counter
 
-... and everything the loop's head. Nothing to search for, all the information you need in one place, right at the beginning, like:
+... and everything in the loop's head. Nothing to search for, all the information you need in one place, right at the beginning, like:
 ```
 for ($i = 0; $i -lt $array.count; $i++) {
     # whatever
@@ -380,9 +379,9 @@ for ($i = $global:importedObjects; <# condition #>; $i++) { ... }
 
 You probably could skip `$i` all along and just use `$global:importedObjects` as the counter. You would have to set it to itself then for initialization. I prefer this way.
 
-Now to the termination condition.
+Now to the terminating condition.
 
-First of all we want the loop to run until all our objects`$global:tenantObjects` have been imported. This is easy:
+First of all we want the loop to run until all our `$global:tenantObjects` have been imported. This is easy:
 ```
 for ($i = $global:importedObjects; $i -lt $global:tenantObjects.Count ... ; $i++) { ... }
 ```
@@ -402,14 +401,14 @@ for ($i = $global:objectsImported; $i -lt $global:tenantObjects.Count -and (!$Us
 
     # at the end of the loop, increment the tracking counters
     $global:importedObject++
-    $global:PageSize++
+    $global:PageToken++
 
 }
 ```
 
-Since we are not using a `foreach{}`-Loop you must use classic array syntax to access the current object to be process, like `$global:tenantObject[$i]`, as I outlined in the block comment in the above snippet.
+Since we are not using a `foreach{}`-Loop you must use classic array syntax to access the current object to be processed, like `$global:tenantObject[$i]`, as I outlined in the block comment in the above snippet.
 
-At the very end of the loop, do not forget incrementing our tracking counters, so the script knows, where it is in the process.
+At the very end of the loop do not forget incrementing our tracking counters, so the script knows, where it is in the process.
 
 ### Finishing the paged import
 
@@ -489,6 +488,9 @@ if (!$global:tenantObjects) {
 
 #-Processing-Loop-----------------------------------
 
+# set the page internal counter to 0 before each page starts
+$global:PageToken = 0
+
 for ($i = $global:objectsImported; $i -lt $global:tenantObjects.Count -and (!$UsePagedImport -or ($UsePagedImport -and $global:PageToken -lt $PageSize)); $i++) {
 
     # use a speaking variable name instead of the array element through the rest of the code
@@ -505,14 +507,14 @@ for ($i = $global:objectsImported; $i -lt $global:tenantObjects.Count -and (!$Us
 
     # at the end of the loop, increment the tracking counters
     $global:importedObject++
-    $global:PageSize++
+    $global:PageToken++
 
 }
 
 
 #-Status-Communication-for-PSMA--------------------
 
-# Is the number of imported objects still lower then all objects together?
+# Is the number of imported objects still lower than all objects together?
 # Then we have MoreToImport.
 if ($global:objectsImported -lt $global:tenantObjects.Count) {
     $global:MoreToImport = $True
@@ -533,10 +535,10 @@ For this you need to hand back the following information packaged in a hashtable
 Data|Description
 ---|---
 objectClass|as defined in your schema
-your anchor|the field you defined as the anchor field for MIM in the schema
-anchor value|the value of the anchor of the failed dataset. This value is shown in the left column of MIM's reporting section. If your script experienced an error unrelated to your data, you can set this field to anything you like (e.g. "ERROR" or "Oops!" or ...)
-"Name" of the error|"Name" is a bit misleading. Use it as a short description show in the right column of MIM's reporting section, next to the anchor value you defined.
-Error details|any extended information about the error. This information is shown in the dialog which opens in MIM when you click on the posted error.
+your_anchor|the field you defined as the anchor field for MIM in the schema
+anchor_value|the value of the anchor of the failed dataset. This value is shown in the left column of MIM's reporting section. If your script experienced an error unrelated to your data, you can set this field to anything you like (e.g. "ERROR" or "Oops!" or ...)
+ErrorName|"Name" is a bit misleading. Use it as a short description shown in the right column of MIM's reporting section, next to the anchor value you defined.
+ErrorDetail|any extended information about the error. This information is shown in the dialog which opens in MIM when you click on the posted error.
 
 **Example:**
 
@@ -562,7 +564,7 @@ Let's assume the variable holding the data is called `$user`. Your script checks
 
 Don't be confused by the brackets, they are used for MIM-internal, unchangeable fields. You will find more like this when writing export scripts.
 
-As simple as it is, it is an ugly concept being used like this throughout your script. You will probably have more than just one place in your script where you want to post an error, so I recommend wrapping this part in a function and make it flexible enough to be used with all kinds of anchors and objectClasses. This way you can reuse it for different scripts and data.
+As simple as it is, in my opinion it is ugly when being used like this throughout your script. You will probably have more than just one place in your script where you want to post an error, so I recommend wrapping this part in a function and make it flexible enough to be used with all kinds of anchors and objectClasses. This way you can reuse it for different scripts and data.
 
 This is my approach:
 
@@ -601,13 +603,18 @@ The actual call from our example above would then be:
 ```
 New-MIMError -objectClass 'user' -AnchorName 'UserName' -AnchorValue $user.UserName -ErrorName 'Invalid character' -ErrorDetail '"LastName" contains a character not matching the english alphabet'
 ```
-Not exactly less to type, but still better to understand than a sudden hash definition somewhere in the code.
+Not exactly less to type, but i find it still better to understand than a sudden hash definition somewhere in the code.
 
 ---
 # Appendix B: Logging
 
 This will be a short one:
 
-**Please implement a decent logging in your script!** You will need it more often than you think to find any kinds of strange behavior!
+**Please implement a decent logging in your script!** You will need it more often than you think to find any kind of strange behavior!
 
 If you need a working logging function, feel free to make use of [mine](https://github.com/OtterKring/PS_Write-Log).
+
+
+
+<br><br><br>
+Happy MIMming!
